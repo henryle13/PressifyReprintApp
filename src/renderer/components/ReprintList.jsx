@@ -308,6 +308,7 @@ function EditableDatetime({ value, onSave, className, readOnly }) {
 
 export default function ReprintList() {
   const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
   const { typeId } = useParams();
   const [reprints, setReprints] = useState({});
   const [users, setUsers] = useState({});
@@ -318,9 +319,11 @@ export default function ReprintList() {
   const [userReprints, setUserReprints] = useState({});
   const [reasonErrors, setReasonErrors] = useState({});
   const [reprintTypes, setReprintTypes] = useState({});
+  const [teams, setTeams] = useState({});
   const [timelineId, setTimelineId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [teamFilter, setTeamFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -361,7 +364,7 @@ export default function ReprintList() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const [r, u, re, pr, cr, sr, ur, rErr, rt] = await Promise.all([
+      const [r, u, re, pr, cr, sr, ur, rErr, rt, tm] = await Promise.all([
         window.electronAPI.db.reprints.getAll(),
         window.electronAPI.db.users.getAll(),
         window.electronAPI.db.reasons.getAll(),
@@ -371,6 +374,7 @@ export default function ReprintList() {
         window.electronAPI.db.userReprints.getAll(),
         window.electronAPI.db.reasonErrors.getAll(),
         window.electronAPI.db.reprintTypes.getAll(),
+        window.electronAPI.db.teams.getAll(),
       ]);
       setReprints(r);
       setUsers(u);
@@ -381,6 +385,7 @@ export default function ReprintList() {
       setUserReprints(ur);
       setReasonErrors(rErr);
       setReprintTypes(rt);
+      setTeams(tm);
     } catch {
       // Silently ignore polling errors
     } finally {
@@ -845,6 +850,7 @@ export default function ReprintList() {
         if (r.reprint_type_id) return false;
       }
       if (statusFilter && r.status !== statusFilter) return false;
+      if (teamFilter && String(reasons[r.reason_reprint_id]?.team_id || '') !== String(teamFilter)) return false;
       if (dateFrom) {
         const created = (r.created_at || '').substring(0, 10);
         if (created < dateFrom) return false;
@@ -1086,7 +1092,7 @@ export default function ReprintList() {
       <div className="card mb-3">
         <div className="card-body py-2">
           <div className="row g-2 align-items-center">
-            <div className="col-md-4">
+            <div className="col-md-3">
               <input
                 type="text"
                 className="form-control form-control-sm"
@@ -1095,7 +1101,7 @@ export default function ReprintList() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="col-md-3">
+            <div className="col-md-2">
               <select className="form-select form-select-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                 <option value="">All Status</option>
                 <option value="not_yet">Not Yet</option>
@@ -1104,6 +1110,16 @@ export default function ReprintList() {
                 <option value="printed">Printed</option>
               </select>
             </div>
+            {isAdmin && (
+              <div className="col-md-2">
+                <select className="form-select form-select-sm" value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} title="Filter by team">
+                  <option value="">All Teams</option>
+                  {Object.entries(teams).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, t]) => (
+                    <option key={id} value={id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="col-md-2">
               <input type="date" className="form-control form-control-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title="From date" />
             </div>
@@ -1182,7 +1198,7 @@ export default function ReprintList() {
                   />
                 </th>
                 <th rowSpan="2" className="align-middle text-center col-fixed-xs">#</th>
-                <th colSpan="3" className="text-center col-group-order">Order</th>
+                <th colSpan={isAdmin ? 4 : 3} className="text-center col-group-order">Order</th>
                 <th colSpan="5" className="text-center col-group-product">Product</th>
                 <th colSpan="3" className="text-center col-group-error">Error</th>
                 <th colSpan="2" className="text-center col-group-status">Status</th>
@@ -1192,6 +1208,7 @@ export default function ReprintList() {
                 <th className="col-group-order">Support Name</th>
                 <th className="col-group-order">Order ID</th>
                 <th className="col-group-order">Li do Reprint</th>
+                {isAdmin && <th className="col-group-order">Team</th>}
                 <th className="col-group-product">NOTE (TEAM GANGSHEET NOTE LÊN ĐỂ IN)</th>
                 <th className="col-group-product">Loai Ao</th>
                 <th className="col-group-product">Size</th>
@@ -1207,7 +1224,7 @@ export default function ReprintList() {
             <tbody>
               {filteredByDate.length === 0 ? (
                 <tr>
-                  <td colSpan="16" className="text-center text-muted py-4">No reprints found</td>
+                  <td colSpan={isAdmin ? 17 : 16} className="text-center text-muted py-4">No reprints found</td>
                 </tr>
               ) : (
                 (() => {
@@ -1292,6 +1309,16 @@ export default function ReprintList() {
                         />
                       )}
                     </td>
+                    {isAdmin && (
+                      <td className="cell-order text-center">
+                        {(() => {
+                          const tid = reasons[r.reason_reprint_id]?.team_id;
+                          return tid && teams[tid]
+                            ? <span className="badge bg-info text-dark">{teams[tid].name}</span>
+                            : <span className="text-muted">—</span>;
+                        })()}
+                      </td>
+                    )}
 
                     {/* ── Product ── */}
                     <td className="cell-product cell-note">

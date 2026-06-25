@@ -23,21 +23,24 @@ export default function Dashboard() {
   const [users, setUsers] = useState({});
   const [reasons, setReasons] = useState({});
   const [reprintTypes, setReprintTypes] = useState({});
+  const [teams, setTeams] = useState({});
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
   async function loadData() {
-    const [r, u, re, rt] = await Promise.all([
+    const [r, u, re, rt, tm] = await Promise.all([
       window.electronAPI.db.reprints.getAll(),
       window.electronAPI.db.users.getAll(),
       window.electronAPI.db.reasons.getAll(),
       window.electronAPI.db.reprintTypes.getAll(),
+      window.electronAPI.db.teams.getAll(),
     ]);
     setReprints(r);
     setUsers(u);
     setReasons(re);
     setReprintTypes(rt);
+    setTeams(tm);
   }
 
   useEffect(() => { loadData(); }, []);
@@ -144,6 +147,19 @@ export default function Dashboard() {
     datasets: [{ label: 'Reprints', data: Object.values(bySupport), backgroundColor: '#198754' }],
   };
 
+  // Reprints by Team (team derived from reason → team_id)
+  const byTeam = {};
+  reprintArr.forEach((r) => {
+    const tid = reasons[r.reason_reprint_id]?.team_id;
+    const name = tid && teams[tid] ? teams[tid].name : 'No team';
+    byTeam[name] = (byTeam[name] || 0) + 1;
+  });
+
+  const teamBarData = {
+    labels: Object.keys(byTeam),
+    datasets: [{ label: 'Reprints', data: Object.values(byTeam), backgroundColor: '#6f42c1' }],
+  };
+
   const barOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -246,6 +262,17 @@ export default function Dashboard() {
             <div className="card-header">Reprints by Support</div>
             <div className="card-body" style={{ height: '300px' }}>
               {total > 0 ? <Bar data={supportBarData} options={barOptions} /> : <p className="text-muted text-center">No data</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="row g-3 mt-1">
+        <div className="col-md-6">
+          <div className="card">
+            <div className="card-header">Reprints by Team</div>
+            <div className="card-body" style={{ height: '300px' }}>
+              {total > 0 ? <Bar data={teamBarData} options={barOptions} /> : <p className="text-muted text-center">No data</p>}
             </div>
           </div>
         </div>
