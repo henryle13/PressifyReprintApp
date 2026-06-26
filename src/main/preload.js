@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getLineIds: (ids) => ipcRenderer.invoke('order:getLineIds', ids),
   },
 
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  },
+
   scanner: {
     onDeviceChanged: (cb) => {
       const fn = (_, data) => cb(data);

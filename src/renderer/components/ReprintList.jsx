@@ -598,6 +598,7 @@ export default function ReprintList() {
         if (i === sourceIdx) continue;
         const r = filteredByDate[i];
         if (!r) continue;
+        if (isRowLocked(r)) continue;
         ids.add(r.id);
         await window.electronAPI.db.reprints.update(r.id, { [field]: value || '' });
         await window.electronAPI.db.timelines.create({
@@ -768,8 +769,13 @@ export default function ReprintList() {
 
   async function handleProcessingSelected() {
     if (selectedIds.size === 0) return;
+    const ids = [...selectedIds].filter((id) => !isRowLocked(reprints[id]));
+    if (ids.length === 0) {
+      alert("You can only update today's records.");
+      return;
+    }
     try {
-      for (const id of selectedIds) {
+      for (const id of ids) {
         await window.electronAPI.db.reprints.update(id, { status: 'processing' });
         await window.electronAPI.db.timelines.create({
           user_id: currentUser.uid,
@@ -786,9 +792,14 @@ export default function ReprintList() {
 
   async function handleCompleteSelected() {
     if (selectedIds.size === 0) return;
+    const ids = [...selectedIds].filter((id) => !isRowLocked(reprints[id]));
+    if (ids.length === 0) {
+      alert("You can only update today's records.");
+      return;
+    }
     const finishedDate = getChicagoNow();
     try {
-      for (const id of selectedIds) {
+      for (const id of ids) {
         await window.electronAPI.db.reprints.update(id, { status: 'completed', finished_date: finishedDate });
         await window.electronAPI.db.timelines.create({
           user_id: currentUser.uid,
@@ -959,6 +970,24 @@ export default function ReprintList() {
     return cur >= block && cur < unlock;
   })();
 
+  // ─── Day lock: non-admins may only CRUD today's records (America/Chicago) ───
+  const isAdmin = currentUser?.role === 'admin';
+  const todayKey = (() => {
+    const chi = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+    const y = chi.getFullYear();
+    const m = String(chi.getMonth() + 1).padStart(2, '0');
+    const d = String(chi.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  })();
+  // A record is locked if the global time-lock is on, or a non-admin is touching a past day.
+  function isRowLocked(r) {
+    if (editLocked) return true;
+    if (isAdmin) return false;
+    return getDateKey(r?.created_at) !== todayKey;
+  }
+  // Non-admins can only add/fill for today (or the "All" view, which creates today's records).
+  const addLocked = editLocked || (!isAdmin && !!activeDate && activeDate !== todayKey);
+
   // Refreshed every render — keydown listener always calls latest version
   processScanRef.current = async (raw) => {
     if (!scannerConnected) return;
@@ -1068,8 +1097,8 @@ export default function ReprintList() {
           </>)}
         </div>
         <div className="d-flex gap-2">
-          <button className="btn btn-outline-secondary" onClick={() => setShowOrderFillModal(true)} disabled={editLocked}>Fill Order IDs</button>
-          <button className="btn btn-primary" onClick={handleAdd} disabled={editLocked}>+ Add Reprint</button>
+          <button className="btn btn-outline-secondary" onClick={() => setShowOrderFillModal(true)} disabled={addLocked}>Fill Order IDs</button>
+          <button className="btn btn-primary" onClick={handleAdd} disabled={addLocked}>+ Add Reprint</button>
         </div>
       </div>
 
@@ -1079,6 +1108,15 @@ export default function ReprintList() {
           <span>
             <strong>Editing locked</strong> after {reprintSettings.timeblock} CT.
             {reprintSettings.timeunlock && <> Unlocks at <strong>{reprintSettings.timeunlock} CT</strong>.</>}
+          </span>
+        </div>
+      )}
+
+      {!editLocked && !isAdmin && activeDate && activeDate !== todayKey && (
+        <div className="alert alert-secondary d-flex align-items-center gap-2 py-2 mb-3">
+          <span style={{ fontSize: '1.1rem' }}>🔒</span>
+          <span>
+            <strong>Read-only.</strong> You can only edit <strong>today's</strong> records ({todayKey} CT).
           </span>
         </div>
       )}
@@ -1222,6 +1260,7 @@ export default function ReprintList() {
                   return filteredByDate.map((r, idx) => {
                   const oid = (r.order_id || '').trim();
                   const isDup = oid && orderDateCount[`${(r.created_at || '').substring(0, 10)}||${oid}`] > 1;
+                  const rowLocked = isRowLocked(r);
                   return (
                   <tr key={r.id}
                     data-row-idx={idx}
@@ -1240,7 +1279,7 @@ export default function ReprintList() {
                         options={supportUserOpts}
                         displayValue={users[r.support_id]?.name}
                         onSave={(v) => saveField(r.id, 'support_id', v)}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-order">
@@ -1250,7 +1289,7 @@ export default function ReprintList() {
                           className="fw-semibold"
                           placeholder="Order ID"
                           onSave={(v) => saveField(r.id, 'order_id', extractOrderId(v))}
-                          readOnly={editLocked}
+                          readOnly={rowLocked}
                         />
                         {r.order_id && (
                           <button
@@ -1274,6 +1313,23 @@ export default function ReprintList() {
                             <i className="bi bi-clipboard"></i>
                           </button>
                         )}
+                        {r.order_id && (
+                          <button
+                            className="btn btn-sm p-0 border-0 text-muted"
+                            style={{ fontSize: '0.7rem', lineHeight: 1 }}
+                            title="Open order on pressify.us"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const oid = (r.order_id || '').trim();
+                              if (!oid) return;
+                              window.electronAPI.shell.openExternal(
+                                `https://pressify.us/orders?order_id=${encodeURIComponent(oid)}`
+                              );
+                            }}
+                          >
+                            <i className="bi bi-box-arrow-up-right"></i>
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className={`cell-order ${filledIds.has(r.id) ? 'cell-filled' : ''}`} style={{ position: 'relative' }}>
@@ -1283,9 +1339,9 @@ export default function ReprintList() {
                         displayValue={reasons[r.reason_reprint_id]?.name}
                         onSave={(v) => saveField(r.id, 'reason_reprint_id', v)}
                         onAddNew={() => { setAddNewModal({ type: 'reason', reprintId: r.id }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
-                      {r.reason_reprint_id && !editLocked && (
+                      {r.reason_reprint_id && !rowLocked && (
                         <div
                           className="drag-fill-handle"
                           onMouseDown={(e) => startDragFill(e, 'reason_reprint_id', r.reason_reprint_id, idx)}
@@ -1295,7 +1351,7 @@ export default function ReprintList() {
 
                     {/* ── Product ── */}
                     <td className="cell-product cell-note">
-                      <EditableText value={r.note} placeholder="Note" onSave={(v) => saveField(r.id, 'note', v)} readOnly={editLocked} />
+                      <EditableText value={r.note} placeholder="Note" onSave={(v) => saveField(r.id, 'note', v)} readOnly={rowLocked} />
                     </td>
                     <td className="cell-product">
                       <EditableSelect
@@ -1304,7 +1360,7 @@ export default function ReprintList() {
                         displayValue={productReprints[r.product_reprint_id]?.name}
                         onSave={(v) => saveField(r.id, 'product_reprint_id', v)}
                         onAddNew={() => { setAddNewModal({ type: 'product', reprintId: r.id }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-product">
@@ -1314,7 +1370,7 @@ export default function ReprintList() {
                         displayValue={sizeReprints[r.size_reprint_id]?.name}
                         onSave={(v) => saveField(r.id, 'size_reprint_id', v)}
                         onAddNew={() => { setAddNewModal({ type: 'size', reprintId: r.id }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-product">
@@ -1324,7 +1380,7 @@ export default function ReprintList() {
                         displayValue={colorReprints[r.color_reprint_id]?.name}
                         onSave={(v) => saveField(r.id, 'color_reprint_id', v)}
                         onAddNew={() => { setAddNewModal({ type: 'color', reprintId: r.id }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-product">
@@ -1333,7 +1389,7 @@ export default function ReprintList() {
                         options={brandOpts}
                         displayValue={r.brand || null}
                         onSave={(v) => saveField(r.id, 'brand', v)}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
 
@@ -1347,7 +1403,7 @@ export default function ReprintList() {
                         onSaveSelect={(v) => saveField(r.id, 'reason_error_id', v)}
                         onSaveText={(v) => saveField(r.id, 'reason_error', v)}
                         onAddNew={() => { setAddNewModal({ type: 'reasonError', reprintId: r.id }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-error">
@@ -1357,7 +1413,7 @@ export default function ReprintList() {
                         displayValue={userReprints[r.user_error_id]?.name}
                         onSave={(v) => saveField(r.id, 'user_error_id', v)}
                         onAddNew={() => { setAddNewModal({ type: 'userReprint', reprintId: r.id, field: 'user_error_id' }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-error">
@@ -1367,7 +1423,7 @@ export default function ReprintList() {
                         displayValue={userReprints[r.user_note]?.name}
                         onSave={(v) => saveField(r.id, 'user_note', v)}
                         onAddNew={() => { setAddNewModal({ type: 'userReprint', reprintId: r.id, field: 'user_note' }); setNewItemName(''); }}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
 
@@ -1382,14 +1438,14 @@ export default function ReprintList() {
                           </span>
                         }
                         onSave={(v) => saveStatus(r.id, v)}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
                     <td className="cell-status">
                       <EditableDatetime
                         value={r.finished_date}
                         onSave={(v) => saveField(r.id, 'finished_date', v)}
-                        readOnly={editLocked}
+                        readOnly={rowLocked}
                       />
                     </td>
 

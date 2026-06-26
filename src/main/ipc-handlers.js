@@ -335,6 +335,15 @@ function registerHandlers() {
     return { ssoEnabled: true, hasToken: apiClient.hasToken() };
   });
 
+  ipcMain.handle('shell:openExternal', async (_, url) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      logger.warn('shell:openExternal rejected non-http url', { url });
+      return { success: false };
+    }
+    await shell.openExternal(url);
+    return { success: true };
+  });
+
   ipcMain.handle('order:getLineIds', async (_, ids) => {
     const list = Array.isArray(ids) ? ids.filter((x) => /^\d+$/.test(String(x))) : [];
     if (list.length === 0) return {};
