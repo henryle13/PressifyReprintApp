@@ -977,7 +977,6 @@ export default function ReprintList() {
   })();
 
   // ─── Day lock: non-admins may only CRUD today's records (America/Chicago) ───
-  const isAdmin = currentUser?.role === 'admin';
   const todayKey = (() => {
     const chi = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
     const y = chi.getFullYear();
