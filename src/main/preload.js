@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       getAll: () => ipcRenderer.invoke('db:roles:getAll'),
     },
     reprints: {
-      getAll: () => ipcRenderer.invoke('db:reprints:getAll'),
+      getAll: (days) => ipcRenderer.invoke('db:reprints:getAll', days),
       create: (data) => ipcRenderer.invoke('db:reprints:create', data),
       update: (id, data) => ipcRenderer.invoke('db:reprints:update', id, data),
       delete: (id) => ipcRenderer.invoke('db:reprints:delete', id),

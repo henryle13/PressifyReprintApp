@@ -84,8 +84,8 @@ function registerHandlers() {
 
   // ─── Reprints ───
 
-  ipcMain.handle('db:reprints:getAll', async () => {
-    return apiClient.get('/api/reprints');
+  ipcMain.handle('db:reprints:getAll', async (_, days) => {
+    return apiClient.get('/api/reprints' + (days ? `?days=${days}` : ''));
   });
 
   ipcMain.handle('db:reprints:create', async (_, data) => {

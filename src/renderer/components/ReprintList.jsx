@@ -333,7 +333,8 @@ export default function ReprintList() {
   const [dragFill, setDragFill] = useState(null); // { field, value, sourceIdx }
   const [dragFillEnd, setDragFillEnd] = useState(null);
   const [filledIds, setFilledIds] = useState(new Set()); // IDs just filled
-  const [dateTabLimit, setDateTabLimit] = useState(7); // show last N days by default
+  const [dateTabLimit, setDateTabLimit] = useState(7); // last N days: drives BOTH fetch range & tab display (0 = all)
+  const [loading, setLoading] = useState(true);
   const [showOrderFillModal, setShowOrderFillModal] = useState(false);
   const [orderFillText, setOrderFillText] = useState('');
   const [orderFillProgress, setOrderFillProgress] = useState(null); // null | { done, total }
@@ -353,19 +354,20 @@ export default function ReprintList() {
   const [scanTestResult, setScanTestResult] = useState(null);
   const [reprintSettings, setReprintSettings] = useState({});
 
-  const loadingRef = useRef(false);
+  const dayRangeRef = useRef(7);     // current fetch window in days (mirrors dateTabLimit; 0 = all)
+  const loadEpochRef = useRef(0);    // ignore stale concurrent loads
   const dragFillRef = useRef(null);
   const dragFillEndRef = useRef(null);
   const scanBufRef = useRef('');
   const scanTimerRef = useRef(null);
   const processScanRef = useRef(null);
 
-  async function loadData() {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+  async function loadData(days = dayRangeRef.current, spinner = false) {
+    const epoch = ++loadEpochRef.current;
+    if (spinner) setLoading(true);
     try {
       const [r, u, re, pr, cr, sr, ur, rErr, rt, tm] = await Promise.all([
-        window.electronAPI.db.reprints.getAll(),
+        window.electronAPI.db.reprints.getAll(days),
         window.electronAPI.db.users.getAll(),
         window.electronAPI.db.reasons.getAll(),
         window.electronAPI.db.productReprints.getAll(),
@@ -376,6 +378,7 @@ export default function ReprintList() {
         window.electronAPI.db.reprintTypes.getAll(),
         window.electronAPI.db.teams.getAll(),
       ]);
+      if (epoch !== loadEpochRef.current) return; // a newer load started — drop stale result
       setReprints(r);
       setUsers(u);
       setReasons(re);
@@ -389,7 +392,7 @@ export default function ReprintList() {
     } catch {
       // Silently ignore polling errors
     } finally {
-      loadingRef.current = false;
+      if (epoch === loadEpochRef.current) setLoading(false);
     }
   }
 
@@ -478,7 +481,7 @@ export default function ReprintList() {
   useEffect(() => {
     async function init() {
       const [r, u] = await Promise.all([
-        window.electronAPI.db.reprints.getAll(),
+        window.electronAPI.db.reprints.getAll(dayRangeRef.current),
         window.electronAPI.db.users.getAll(),
       ]);
       // Filter reprints for the current type
@@ -504,7 +507,9 @@ export default function ReprintList() {
           note: `Reprint created by ${currentUser.name}`,
         });
       }
-      await loadData();
+      // No spinner here: switching type tab just re-filters in-memory data.
+      // Initial mount still shows the spinner via the default `loading = true`.
+      await loadData(dayRangeRef.current);
     }
     init();
   }, [typeId]);
@@ -1190,7 +1195,7 @@ export default function ReprintList() {
         {dateTabLimit > 0 && dateTabs.length > dateTabLimit && (
           <button
             className="btn btn-sm btn-outline-primary"
-            onClick={() => setDateTabLimit(0)}
+            onClick={() => { setDateTabLimit(0); dayRangeRef.current = 0; loadData(0, true); }}
             title="Show all dates"
           >
             +{dateTabs.length - dateTabLimit} more...
@@ -1201,22 +1206,32 @@ export default function ReprintList() {
           {[7, 14, 30].map((n) => (
             <button
               key={n}
+              disabled={loading}
               className={`btn btn-sm ${dateTabLimit === n ? 'btn-primary' : 'btn-outline-secondary'}`}
-              onClick={() => setDateTabLimit(n)}
+              onClick={() => { setDateTabLimit(n); dayRangeRef.current = n; loadData(n, true); }}
             >
               {n}d
             </button>
           ))}
           <button
+            disabled={loading}
             className={`btn btn-sm ${dateTabLimit === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
-            onClick={() => setDateTabLimit(0)}
+            onClick={() => { setDateTabLimit(0); dayRangeRef.current = 0; loadData(0, true); }}
           >
             All
           </button>
         </div>
       </div>
 
-      <div className="card">
+      <div className="card position-relative">
+        {loading && (
+          <div className="position-absolute top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" style={{ background: 'rgba(255,255,255,0.6)', zIndex: 10 }}>
+            <div className="text-center">
+              <div className="spinner-border text-primary" role="status"><span className="visually-hidden">Loading...</span></div>
+              <div className="small text-primary mt-2">Loading...</div>
+            </div>
+          </div>
+        )}
         <div className="table-responsive">
           <table className="table table-hover table-sm table-bordered reprint-table mb-0">
             <thead className="table-dark">
