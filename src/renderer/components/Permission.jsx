@@ -5,12 +5,13 @@ export default function Permission() {
   const { currentUser } = useAuth();
   const [users, setUsers] = useState({});
   const [roles, setRoles] = useState({});
+  const [teams, setTeams] = useState({});
   const [reasons, setReasons] = useState({});
   const [orderTypes, setOrderTypes] = useState({});
   const [reprintTypes, setReprintTypes] = useState({});
   const [showUserForm, setShowUserForm] = useState(false);
   const [editUserId, setEditUserId] = useState(null);
-  const [form, setForm] = useState({ email: '', username: '', password: '', first_name: '', last_name: '', role_id: '' });
+  const [form, setForm] = useState({ email: '', username: '', password: '', first_name: '', last_name: '', role_id: '', team_id: '' });
   const [tab, setTab] = useState('users');
   const [reasonName, setReasonName] = useState('');
   const [editReasonId, setEditReasonId] = useState(null);
@@ -18,17 +19,21 @@ export default function Permission() {
   const [editOrderTypeId, setEditOrderTypeId] = useState(null);
   const [reprintTypeName, setReprintTypeName] = useState('');
   const [editReprintTypeId, setEditReprintTypeId] = useState(null);
+  const [teamName, setTeamName] = useState('');
+  const [editTeamId, setEditTeamId] = useState(null);
 
   async function loadData() {
-    const [u, ro, r, ot, rt] = await Promise.all([
+    const [u, ro, tm, r, ot, rt] = await Promise.all([
       window.electronAPI.db.users.getAll(),
       window.electronAPI.db.roles.getAll(),
+      window.electronAPI.db.teams.getAll(),
       window.electronAPI.db.reasons.getAll(),
       window.electronAPI.db.orderTypes.getAll(),
       window.electronAPI.db.reprintTypes.getAll(),
     ]);
     setUsers(u);
     setRoles(ro);
+    setTeams(tm);
     setReasons(r);
     setOrderTypes(ot);
     setReprintTypes(rt);
@@ -36,6 +41,10 @@ export default function Permission() {
 
   useEffect(() => { loadData(); }, []);
 
+  const teamEntries = Object.entries(teams).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const teamName_ = (id) => (id && teams[id] ? teams[id].name : '');
+
+  // ─── Users ───
   function handleEditUser(id, user) {
     setEditUserId(id);
     setForm({
@@ -45,13 +54,14 @@ export default function Permission() {
       first_name: user.first_name || '',
       last_name: user.last_name || '',
       role_id: user.role_id || '',
+      team_id: user.team_id || '',
     });
     setShowUserForm(true);
   }
 
   function handleAddUser() {
     setEditUserId(null);
-    setForm({ email: '', username: '', password: '', first_name: '', last_name: '', role_id: '' });
+    setForm({ email: '', username: '', password: '', first_name: '', last_name: '', role_id: '', team_id: '' });
     setShowUserForm(true);
   }
 
@@ -63,6 +73,7 @@ export default function Permission() {
       first_name: form.first_name,
       last_name: form.last_name,
       role_id: form.role_id,
+      team_id: form.team_id || null,
     };
 
     if (editUserId) {
@@ -93,6 +104,7 @@ export default function Permission() {
     }
   }
 
+  // ─── Reasons ───
   async function handleSaveReason(e) {
     e.preventDefault();
     if (!reasonName.trim()) return;
@@ -113,6 +125,12 @@ export default function Permission() {
     }
   }
 
+  async function assignReasonTeam(id, teamId) {
+    await window.electronAPI.db.reasons.update(id, { team_id: teamId || null });
+    setReasons((prev) => ({ ...prev, [id]: { ...prev[id], team_id: teamId || null } }));
+  }
+
+  // ─── Order Types ───
   async function handleSaveOrderType(e) {
     e.preventDefault();
     if (!orderTypeName.trim()) return;
@@ -133,6 +151,7 @@ export default function Permission() {
     }
   }
 
+  // ─── Reprint Types ───
   async function handleSaveReprintType(e) {
     e.preventDefault();
     if (!reprintTypeName.trim()) return;
@@ -153,13 +172,37 @@ export default function Permission() {
     }
   }
 
+  // ─── Teams ───
+  async function handleSaveTeam(e) {
+    e.preventDefault();
+    if (!teamName.trim()) return;
+    if (editTeamId) {
+      await window.electronAPI.db.teams.update(editTeamId, { name: teamName.trim() });
+    } else {
+      await window.electronAPI.db.teams.create({ name: teamName.trim() });
+    }
+    setTeamName('');
+    setEditTeamId(null);
+    await loadData();
+  }
+
+  async function handleDeleteTeam(id) {
+    if (confirm('Delete this team? Users & reasons in it will be unassigned.')) {
+      await window.electronAPI.db.teams.delete(id);
+      await loadData();
+    }
+  }
+
   return (
     <div>
-      <h4 className="mb-3">Permission & Settings</h4>
+      <h4 className="mb-3">Permission &amp; Settings</h4>
 
       <ul className="nav nav-tabs mb-3">
         <li className="nav-item">
           <button className={`nav-link ${tab === 'users' ? 'active' : ''}`} onClick={() => setTab('users')}>Users</button>
+        </li>
+        <li className="nav-item">
+          <button className={`nav-link ${tab === 'teams' ? 'active' : ''}`} onClick={() => setTab('teams')}>Teams</button>
         </li>
         <li className="nav-item">
           <button className={`nav-link ${tab === 'reasons' ? 'active' : ''}`} onClick={() => setTab('reasons')}>Reprint Reasons</button>
@@ -186,6 +229,7 @@ export default function Permission() {
                   <th>Email</th>
                   <th>Name</th>
                   <th>Role</th>
+                  <th>Team</th>
                   <th>Created</th>
                   <th>Actions</th>
                 </tr>
@@ -197,6 +241,7 @@ export default function Permission() {
                     <td>{user.email}</td>
                     <td>{user.name}</td>
                     <td><span className="badge bg-secondary">{user.role_name}</span></td>
+                    <td>{user.team_id ? <span className="badge bg-info text-dark">{teamName_(user.team_id)}</span> : <span className="text-muted">—</span>}</td>
                     <td className="small">{user.created_at || '-'}</td>
                     <td>
                       <div className="btn-group btn-group-sm">
@@ -244,14 +289,25 @@ export default function Permission() {
                           <input type="text" className="form-control" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
                         </div>
                       </div>
-                      <div className="mb-3">
-                        <label className="form-label">Role</label>
-                        <select className="form-select" value={form.role_id} onChange={(e) => setForm({ ...form, role_id: e.target.value })} required>
-                          <option value="">Select role...</option>
-                          {Object.entries(roles).map(([id, r]) => (
-                            <option key={id} value={id}>{r.display_name || r.name}</option>
-                          ))}
-                        </select>
+                      <div className="row mb-3">
+                        <div className="col-md-6">
+                          <label className="form-label">Role</label>
+                          <select className="form-select" value={form.role_id} onChange={(e) => setForm({ ...form, role_id: e.target.value })} required>
+                            <option value="">Select role...</option>
+                            {Object.entries(roles).map(([id, r]) => (
+                              <option key={id} value={id}>{r.display_name || r.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label">Team</label>
+                          <select className="form-select" value={form.team_id} onChange={(e) => setForm({ ...form, team_id: e.target.value })}>
+                            <option value="">— No team —</option>
+                            {teamEntries.map(([id, t]) => (
+                              <option key={id} value={id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     </div>
                     <div className="modal-footer">
@@ -263,6 +319,48 @@ export default function Permission() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'teams' && (
+        <div>
+          <form onSubmit={handleSaveTeam} className="row g-2 mb-3 align-items-center">
+            <div className="col-auto">
+              <input type="text" className="form-control form-control-sm" placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} required />
+            </div>
+            <div className="col-auto">
+              <button type="submit" className="btn btn-sm btn-primary">{editTeamId ? 'Update' : 'Add'}</button>
+              {editTeamId && (
+                <button type="button" className="btn btn-sm btn-secondary ms-1" onClick={() => { setEditTeamId(null); setTeamName(''); }}>Cancel</button>
+              )}
+            </div>
+          </form>
+          <div className="card">
+            <table className="table table-sm mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th>Name</th>
+                  <th style={{ width: '120px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamEntries.map(([id, t]) => (
+                  <tr key={id}>
+                    <td>{t.name}</td>
+                    <td>
+                      <div className="btn-group btn-group-sm">
+                        <button className="btn btn-outline-primary" onClick={() => { setEditTeamId(id); setTeamName(t.name); }}>Edit</button>
+                        <button className="btn btn-outline-danger" onClick={() => handleDeleteTeam(id)}>Del</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {teamEntries.length === 0 && (
+                  <tr><td colSpan="2" className="text-muted text-center">No teams added</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -280,10 +378,11 @@ export default function Permission() {
             </div>
           </form>
           <div className="card">
-            <table className="table table-sm mb-0">
+            <table className="table table-sm mb-0 align-middle">
               <thead className="table-light">
                 <tr>
                   <th>Name</th>
+                  <th style={{ width: '220px' }}>Team</th>
                   <th style={{ width: '120px' }}>Actions</th>
                 </tr>
               </thead>
@@ -291,6 +390,14 @@ export default function Permission() {
                 {Object.entries(reasons).map(([id, r]) => (
                   <tr key={id}>
                     <td>{r.name}</td>
+                    <td>
+                      <select className="form-select form-select-sm" value={r.team_id || ''} onChange={(e) => assignReasonTeam(id, e.target.value)}>
+                        <option value="">— No team —</option>
+                        {teamEntries.map(([tid, t]) => (
+                          <option key={tid} value={tid}>{t.name}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td>
                       <div className="btn-group btn-group-sm">
                         <button className="btn btn-outline-primary" onClick={() => { setEditReasonId(id); setReasonName(r.name); }}>Edit</button>
@@ -300,7 +407,7 @@ export default function Permission() {
                   </tr>
                 ))}
                 {Object.keys(reasons).length === 0 && (
-                  <tr><td colSpan="2" className="text-muted text-center">No reasons added</td></tr>
+                  <tr><td colSpan="3" className="text-muted text-center">No reasons added</td></tr>
                 )}
               </tbody>
             </table>

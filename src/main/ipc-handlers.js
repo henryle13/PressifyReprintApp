@@ -215,6 +215,25 @@ function registerHandlers() {
     await apiClient.del(`/api/reprint-types/${id}`);
   });
 
+  // ─── Teams ───
+
+  ipcMain.handle('db:teams:getAll', async () => {
+    return apiClient.get('/api/teams');
+  });
+
+  ipcMain.handle('db:teams:create', async (_, data) => {
+    const result = await apiClient.post('/api/teams', data);
+    return result.id;
+  });
+
+  ipcMain.handle('db:teams:update', async (_, id, data) => {
+    await apiClient.put(`/api/teams/${id}`, data);
+  });
+
+  ipcMain.handle('db:teams:delete', async (_, id) => {
+    await apiClient.del(`/api/teams/${id}`);
+  });
+
   // ─── Reason Reprints ───
 
   ipcMain.handle('db:reasons:getAll', async () => {

@@ -2,3 +2,4 @@ node_modules/
 out/
 .webpack/
 .env
+.DS_Store

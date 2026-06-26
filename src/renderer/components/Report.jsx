@@ -18,6 +18,8 @@ export default function Report() {
   const [reasonErrors, setReasonErrors] = useState({});
   const [reprintTypes, setReprintTypes] = useState({});
   const [productReprints, setProductReprints] = useState({});
+  const [reasons, setReasons] = useState({});
+  const [teams, setTeams] = useState({});
   const [loading, setLoading] = useState(true);
 
   // ── Filters ──
@@ -33,18 +35,22 @@ export default function Report() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [r, ur, re, rt, pr] = await Promise.all([
+      const [r, ur, re, rt, pr, rs, tm] = await Promise.all([
         window.electronAPI.db.reprints.getAll(),
         window.electronAPI.db.userReprints.getAll(),
         window.electronAPI.db.reasonErrors.getAll(),
         window.electronAPI.db.reprintTypes.getAll(),
         window.electronAPI.db.productReprints.getAll(),
+        window.electronAPI.db.reasons.getAll(),
+        window.electronAPI.db.teams.getAll(),
       ]);
       setReprints(r);
       setUserReprints(ur);
       setReasonErrors(re);
       setReprintTypes(rt);
       setProductReprints(pr);
+      setReasons(rs);
+      setTeams(tm);
     } catch (err) {
       console.error('Report load error', err);
     } finally {
@@ -109,9 +115,7 @@ export default function Report() {
     } else if ((r.reason_error || '').trim()) {
       name = r.reason_error.trim();
     } else {
-      reasonMap['__none__'] = reasonMap['__none__'] || { name: 'Chưa xác định', count: 0 };
-      reasonMap['__none__'].count++;
-      return;
+      return; // Bỏ qua phiếu không ghi nhận lý do lỗi (không thống kê "Chưa xác định")
     }
     const key = name.toLowerCase();
     reasonMap[key] = reasonMap[key] || { name, count: 0 };
@@ -134,11 +138,23 @@ export default function Report() {
   const byProduct = {};
   filtered.forEach((r) => {
     const pid = r.product_reprint_id;
-    const name = pid ? (productReprints[pid]?.name || `Product #${pid}`) : 'Chưa xác định';
+    if (!pid) return; // Bỏ qua phiếu chưa chọn loại áo (không thống kê "Chưa xác định")
+    const name = productReprints[pid]?.name || `Product #${pid}`;
     byProduct[name] = (byProduct[name] || 0) + 1;
   });
   const productRows = Object.entries(byProduct).sort((a, b) => b[1] - a[1]);
   const productMax = productRows[0]?.[1] || 1;
+  const productTotal = productRows.reduce((s, [, c]) => s + c, 0);
+
+  // ── Group by Team (team derived from reason → team_id) ──
+  const byTeam = {};
+  filtered.forEach((r) => {
+    const tid = reasons[r.reason_reprint_id]?.team_id;
+    const name = tid && teams[tid] ? teams[tid].name : 'Chưa phân team';
+    byTeam[name] = (byTeam[name] || 0) + 1;
+  });
+  const teamRows = Object.entries(byTeam).sort((a, b) => b[1] - a[1]);
+  const teamMax = teamRows[0]?.[1] || 1;
 
   const typeOpts = Object.entries(reprintTypes).sort(([a], [b]) => Number(a) - Number(b));
 
@@ -199,6 +215,15 @@ export default function Report() {
     productRows.forEach(([name, count], i) => {
       lines.push([i + 1, name, count].map(esc).join(','));
     });
+    lines.push(['', 'Tổng cộng', productTotal].map(esc).join(','));
+    return lines;
+  }
+
+  function buildTeamCSV() {
+    const lines = [['#', 'Team', 'Số lần'].map(esc).join(',')];
+    teamRows.forEach(([name, count], i) => {
+      lines.push([i + 1, name, count].map(esc).join(','));
+    });
     lines.push(['', 'Tổng cộng', total].map(esc).join(','));
     return lines;
   }
@@ -242,6 +267,10 @@ export default function Report() {
       // Section 4: Theo Loại Áo
       esc('TỔNG SỐ REPRINT THEO LOẠI ÁO'),
       ...buildProductCSV(),
+      ...sep,
+      // Section 5: Theo Team
+      esc('TỔNG SỐ REPRINT THEO TEAM'),
+      ...buildTeamCSV(),
     ];
     downloadCSV(lines, `bao-cao-reprint_${dateFrom}_${dateTo}.csv`);
   }
@@ -566,7 +595,7 @@ export default function Report() {
                   <tfoot className="table-light">
                     <tr>
                       <td colSpan={2} className="text-end text-muted small">Tổng cộng</td>
-                      <td className="text-center fw-bold">{total}</td>
+                      <td className="text-center fw-bold">{productTotal}</td>
                       <td></td>
                     </tr>
                   </tfoot>
@@ -576,6 +605,61 @@ export default function Report() {
           </div>
         </div>
 
+      </div>
+
+      {/* ── Theo Team ── */}
+      <div className="row g-4 mt-0">
+        <div className="col-lg-6">
+          <div className="card h-100">
+            <div className="card-header py-2 text-white d-flex justify-content-between align-items-center" style={{ backgroundColor: '#6f42c1' }}>
+              <span className="fw-semibold">Tổng Số Reprint Theo Team</span>
+              <span className="badge bg-light" style={{ color: '#6f42c1' }}>{total} tổng cộng</span>
+            </div>
+            <div className="card-body p-0">
+              {teamRows.length === 0 ? (
+                <div className="text-center text-muted py-4">Không có dữ liệu</div>
+              ) : (
+                <table className="table table-sm table-hover mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th style={{ width: 36 }} className="text-center">#</th>
+                      <th>Team</th>
+                      <th style={{ width: 60 }} className="text-center">Số lần</th>
+                      <th style={{ width: 160 }}>Tỷ lệ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamRows.map(([name, count], i) => {
+                      const isNone = name === 'Chưa phân team';
+                      return (
+                        <tr key={name} className={isNone ? 'table-light' : ''}>
+                          <td className="text-center text-muted">{i + 1}</td>
+                          <td>
+                            {isNone
+                              ? <span className="text-muted fst-italic">{name}</span>
+                              : <span className="fw-medium">{name}</span>
+                            }
+                          </td>
+                          <td className="text-center">
+                            <span className="badge" style={{ backgroundColor: isNone ? '#6c757d' : '#6f42c1' }}>{count}</span>
+                          </td>
+                          <td><BarCell count={count} max={teamMax} color="#6f42c1" /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="table-light">
+                    <tr>
+                      <td colSpan={2} className="text-end text-muted small">Tổng cộng</td>
+                      <td className="text-center fw-bold">{total}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
