@@ -21,6 +21,7 @@ export default function Permission() {
   const [editReprintTypeId, setEditReprintTypeId] = useState(null);
   const [teamName, setTeamName] = useState('');
   const [editTeamId, setEditTeamId] = useState(null);
+  const [teamUserSearch, setTeamUserSearch] = useState('');
 
   async function loadData() {
     const [u, ro, tm, r, ot, rt] = await Promise.all([
@@ -128,6 +129,11 @@ export default function Permission() {
   async function assignReasonTeam(id, teamId) {
     await window.electronAPI.db.reasons.update(id, { team_id: teamId || null });
     setReasons((prev) => ({ ...prev, [id]: { ...prev[id], team_id: teamId || null } }));
+  }
+
+  async function assignUserTeam(id, teamId) {
+    await window.electronAPI.db.users.update(id, { team_id: teamId || null });
+    setUsers((prev) => ({ ...prev, [id]: { ...prev[id], team_id: teamId || null } }));
   }
 
   // ─── Order Types ───
@@ -323,43 +329,92 @@ export default function Permission() {
       )}
 
       {tab === 'teams' && (
-        <div>
-          <form onSubmit={handleSaveTeam} className="row g-2 mb-3 align-items-center">
-            <div className="col-auto">
-              <input type="text" className="form-control form-control-sm" placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} required />
-            </div>
-            <div className="col-auto">
-              <button type="submit" className="btn btn-sm btn-primary">{editTeamId ? 'Update' : 'Add'}</button>
-              {editTeamId && (
-                <button type="button" className="btn btn-sm btn-secondary ms-1" onClick={() => { setEditTeamId(null); setTeamName(''); }}>Cancel</button>
-              )}
-            </div>
-          </form>
-          <div className="card">
-            <table className="table table-sm mb-0">
-              <thead className="table-light">
-                <tr>
-                  <th>Name</th>
-                  <th style={{ width: '120px' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamEntries.map(([id, t]) => (
-                  <tr key={id}>
-                    <td>{t.name}</td>
-                    <td>
-                      <div className="btn-group btn-group-sm">
-                        <button className="btn btn-outline-primary" onClick={() => { setEditTeamId(id); setTeamName(t.name); }}>Edit</button>
-                        <button className="btn btn-outline-danger" onClick={() => handleDeleteTeam(id)}>Del</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {teamEntries.length === 0 && (
-                  <tr><td colSpan="2" className="text-muted text-center">No teams added</td></tr>
+        <div className="row">
+          {/* ─── Teams CRUD ─── */}
+          <div className="col-md-5">
+            <form onSubmit={handleSaveTeam} className="row g-2 mb-3 align-items-center">
+              <div className="col-auto">
+                <input type="text" className="form-control form-control-sm" placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} required />
+              </div>
+              <div className="col-auto">
+                <button type="submit" className="btn btn-sm btn-primary">{editTeamId ? 'Update' : 'Add'}</button>
+                {editTeamId && (
+                  <button type="button" className="btn btn-sm btn-secondary ms-1" onClick={() => { setEditTeamId(null); setTeamName(''); }}>Cancel</button>
                 )}
-              </tbody>
-            </table>
+              </div>
+            </form>
+            <div className="card">
+              <table className="table table-sm mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th>Name</th>
+                    <th style={{ width: '120px' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamEntries.map(([id, t]) => (
+                    <tr key={id}>
+                      <td>{t.name}</td>
+                      <td>
+                        <div className="btn-group btn-group-sm">
+                          <button className="btn btn-outline-primary" onClick={() => { setEditTeamId(id); setTeamName(t.name); }}>Edit</button>
+                          <button className="btn btn-outline-danger" onClick={() => handleDeleteTeam(id)}>Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {teamEntries.length === 0 && (
+                    <tr><td colSpan="2" className="text-muted text-center">No teams added</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ─── Gán Team cho User (nhanh) ─── */}
+          <div className="col-md-7">
+            <div className="card">
+              <div className="card-header d-flex justify-content-between align-items-center">
+                <strong>Gán Team cho User</strong>
+                <input type="text" className="form-control form-control-sm" style={{ maxWidth: '200px' }} placeholder="Tìm user..." value={teamUserSearch} onChange={(e) => setTeamUserSearch(e.target.value)} />
+              </div>
+              <div className="card-body p-0">
+                <table className="table table-sm mb-0 align-middle">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Name</th>
+                      <th>Role</th>
+                      <th style={{ width: '200px' }}>Team</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(users)
+                      .filter(([, u]) => {
+                        const q = teamUserSearch.trim().toLowerCase();
+                        return !q || (u.name || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q);
+                      })
+                      .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''))
+                      .map(([id, u]) => (
+                        <tr key={id}>
+                          <td>{u.name}</td>
+                          <td><span className="badge bg-light text-dark border">{u.role_name || u.role}</span></td>
+                          <td>
+                            <select className="form-select form-select-sm" value={u.team_id || ''} onChange={(e) => assignUserTeam(id, e.target.value)}>
+                              <option value="">— No team —</option>
+                              {teamEntries.map(([tid, t]) => (
+                                <option key={tid} value={tid}>{t.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    {Object.keys(users).length === 0 && (
+                      <tr><td colSpan="3" className="text-muted text-center">No users</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       )}
