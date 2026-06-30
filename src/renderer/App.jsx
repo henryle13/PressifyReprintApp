@@ -9,6 +9,7 @@ import ProductList from './components/ProductList';
 import Permission from './components/Permission';
 import Settings from './components/Settings';
 import Report from './components/Report';
+import ReportByLineItem from './components/ReportByLineItem';
 
 function PrivateRoute({ children, roles }) {
   const { currentUser } = useAuth();
@@ -101,6 +102,14 @@ function AppRoutes() {
             element={
               <PrivateRoute roles={['admin', 'printer', 'hr']}>
                 <Report />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="report-line-item"
+            element={
+              <PrivateRoute roles={['admin', 'printer', 'hr']}>
+                <ReportByLineItem />
               </PrivateRoute>
             }
           />

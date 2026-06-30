@@ -981,7 +981,10 @@ export default function ReprintList() {
     return cur >= block && cur < unlock;
   })();
 
-  // ─── Day lock: non-admins may only CRUD today's records (America/Chicago) ───
+  // ─── Day lock: only privileged roles may CRUD past days (America/Chicago) ───
+  // Roles allowed to edit records from previous days. Case-insensitive to be safe.
+  const PAST_DAY_EDIT_ROLES = ['admin', 'designer'];
+  const canEditPastDays = PAST_DAY_EDIT_ROLES.includes((currentUser?.role || '').toLowerCase());
   const todayKey = (() => {
     const chi = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
     const y = chi.getFullYear();
@@ -989,14 +992,14 @@ export default function ReprintList() {
     const d = String(chi.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   })();
-  // A record is locked if the global time-lock is on, or a non-admin is touching a past day.
+  // A record is locked if the global time-lock is on, or a non-privileged role touches a past day.
   function isRowLocked(r) {
     if (editLocked) return true;
-    if (isAdmin) return false;
+    if (canEditPastDays) return false;
     return getDateKey(r?.created_at) !== todayKey;
   }
-  // Non-admins can only add/fill for today (or the "All" view, which creates today's records).
-  const addLocked = editLocked || (!isAdmin && !!activeDate && activeDate !== todayKey);
+  // Non-privileged roles can only add/fill for today (or the "All" view, which creates today's records).
+  const addLocked = editLocked || (!canEditPastDays && !!activeDate && activeDate !== todayKey);
 
   // Refreshed every render — keydown listener always calls latest version
   processScanRef.current = async (raw) => {
@@ -1122,7 +1125,7 @@ export default function ReprintList() {
         </div>
       )}
 
-      {!editLocked && !isAdmin && activeDate && activeDate !== todayKey && (
+      {!editLocked && !canEditPastDays && activeDate && activeDate !== todayKey && (
         <div className="alert alert-secondary d-flex align-items-center gap-2 py-2 mb-3">
           <span style={{ fontSize: '1.1rem' }}>🔒</span>
           <span>

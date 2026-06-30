@@ -11,6 +11,7 @@ const STATIC_MENU_AFTER = [
   { path: '/products', label: 'Products', icon: 'bi-box-seam', roles: ['admin'] },
   { path: '/permission', label: 'Permission', icon: 'bi-shield-lock', roles: ['admin'] },
   { path: '/report', label: 'Report', icon: 'bi-bar-chart-line', roles: ['admin', 'printer', 'hr'] },
+  { path: '/report-line-item', label: 'Report by Line Item', icon: 'bi-grid-3x3-gap', roles: ['admin', 'printer', 'hr'] },
   { path: '/settings', label: 'Settings', icon: 'bi-gear', roles: ['admin'] },
 ];
 
