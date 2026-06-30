@@ -37,14 +37,20 @@ Main Process (src/main/main.js)
   ├── IPC handlers proxy all db/auth/settings calls to API (src/main/ipc-handlers.js)
   ├── Token storage (src/main/token-store.js → electron-store + safeStorage)
   ├── Auto-updater (update-electron-app, checks GitHub Releases, production only)
+  ├── USB HID scanner polling (PowerShell WMI, polls every 2s — see "USB HID Scanner")
   └── Logger (src/main/logger.js, writes to userData/logs/, rotates at 5MB)
 
 Preload (src/main/preload.js)
   └── Exposes window.electronAPI:
       ├── getAppVersion(), installUpdate(), log()
+      ├── onUpdateAvailable(cb), onUpdateDownloaded(cb)
       ├── settings.{get,save,reset,testConnection}
       ├── auth.{login,logout,refresh,validate,me,openWeb,getStatus}
-      └── db.{users,roles,reprints,productReprints,colorReprints,sizeReprints,userReprints,reasons,orderTypes,timelines}.*
+      ├── order.getLineIds(ids)  (external pressify.us lookup — see "Order Line-ID Lookup")
+      ├── scanner.{onDeviceChanged(cb),getDevices}  (USB HID scanner)
+      └── db.{users,roles,reprints,productReprints,colorReprints,sizeReprints,
+              userReprints,reasonErrors,reprintTypes,reasons,orderTypes,
+              reprintSettings,timelines}.*
 
 Renderer Process (src/renderer/)
   ├── index.jsx → React entry point
@@ -85,6 +91,7 @@ All CRUD resources follow the same pattern: `getAll` → GET, `create` → POST,
 | orderTypes | `/api/order-types` |
 | reasonErrors | `/api/reason-errors` (Ly Do Loi — free text or predefined) |
 | reprintTypes | `/api/reprint-types` (multi-type reprint categories) |
+| reprintSettings | `/api/reprint-settings` (GET get / PUT save — single settings object, no CRUD) |
 | timelines | `/api/timelines/{reprintId}` (getByReprint) / `/api/timelines` (create) |
 
 **Auth endpoints:** `POST /api/login`, `POST /api/logout`, `GET /api/me`
@@ -109,6 +116,14 @@ All CRUD endpoints return data as **objects keyed by ID** (e.g. `{"1": {"name": 
 - 401 responses throw `SESSION_EXPIRED` error code (renderer handles redirect to login)
 - Auto-refresh every 30 minutes via `auth:refresh` (validates token with `GET /api/me`)
 - API client also handles 429 rate limiting with `Retry-After` header
+
+### USB HID Scanner
+
+The main process polls for USB HID devices (barcode scanners) every 2 seconds using PowerShell WMI queries (`Win32_PnPEntity`), **not** a native node module — so it is Windows-only. Keyboards/mice/pointers/gamepads are filtered out by name. On connect/disconnect it pushes a `usb-hid-changed` event (`{type: 'connected'|'disconnected', added|removed}`) to the renderer via `scanner.onDeviceChanged(cb)`. `scanner.getDevices()` returns `{hids, raw, err}` (raw = JSON dump of all PnP devices). See `startHidPolling()` / `PS_GET_HID` in `src/main/main.js`.
+
+### Order Line-ID Lookup
+
+`order.getLineIds(ids)` → `order:getLineIds` IPC hits a **hardcoded external endpoint** `https://pressify.us/api/order-get-line-id?ids=...` via Electron `net.fetch` — this bypasses the configurable `apiBaseUrl` and the Sanctum token entirely. Input IDs are filtered to digits-only; returns a `{ orderId: line_id }` map and swallows all errors to `{}`. Used to enrich reprint rows with order line IDs.
 
 ### Routing
 
